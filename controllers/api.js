@@ -9,49 +9,128 @@ var path = require('path');
 var cheerio = require("cheerio");
 var superagent = require("superagent");
 
+var urlParse = function(url){
+  var arr = [],obj={};
+  if(url.indexOf('?') != -1){
+    var parseStr = url.split("?")[1];
+    if(parseStr.indexOf("&") != -1){
+      arr = parseStr.split("&");
+      for(var i = 0;i < arr.length;i++){
+        obj[arr[i].split("=")[0]] = arr[i].split("=")[1];
+      }
+    }else{
+      obj[parseStr.split("=")[0]] = parseStr.split("=")[1];
+    }
+  }
+  return obj;
+}
 
-var football_league_api = 'http://op.juhe.cn/onebox/football/league?key=d4786948957f1d4784a4164abd8ec45a&league=';
-exports.Football = function(req, res) { //联赛对阵以及完赛比分
-    var reqPath = url.parse(req.url).path;
-    var league = reqPath.substr(reqPath.lastIndexOf("/") + 1, reqPath.length);
-    console.log(decodeURI(league));
-    var client = http.createClient(config.url);
-    client.post(football_league_api + league, {}, function(err, response, body) {
-        //console.log(body);
-        if (body.error_code == 0) {
-            res.json(body);
-        } else {
-            var error = {
-                error_code: 1,
-                msg: "联赛名字有误"
-            }
-            res.json(error);
-        }
+exports.News = function (req, res) {
+  var url = 'https://bifen4m.qiumibao.com/json/list.htm';
+  var client = http.createClient(config.url);
+  client.post(url, {}, function(err, response, body) {
+    // console.log(response)
+    res.json({
+      status:200,
+      data: response.body
     });
-};
+  });
+}
 
-var score_api = "http://v.juhe.cn/football/scorerank.php";
+/*
+  获取五大联赛以及中超积分榜
+*/
 exports.Score = function(req, res) { //足球联赛积分榜
-    var reqPath = url.parse(req.url).path;
-    var d = new Date();
-    var year = parseInt(d.getFullYear() - 1);
-    var league_id = reqPath.substr(reqPath.lastIndexOf("/") + 1, reqPath.length);
-    var client = http.createClient(config.url);
-    var geturl = score_api + "?league_id=" + league_id + "&season_id=" + year + "&key=a618f3a78bf8405b9001b679e9e0c63f";
-    client.get(geturl, function(err, response, body) {
-        //console.log(body);
-        if (body.error_code == 0) {
-            res.json(body);
-        } else {
-            var error = {
-                error_code: body.error_code,
-                msg: "联赛(杯赛)名字有误"
-            }
-            res.json(error);
-        }
-    });
+  var reqPath = url.parse(req.url).path;
+  var query = url.parse(req.url).query;
+  var league = query.split('=') [1]
+  league = league.replace('"', '')
+  var year = parseInt(new Date().getFullYear() - 1);
+  var client = http.createClient(config.url);
+  var score_api = 'http://dc.qiumibao.com/shuju/public/index.php?_url=/data/index&league='+ league +'&tab=积分榜&year=[year]';
+  client.get(score_api, function(err, response, body) {
+    res.json(response);
+  });
 };
 
+exports.FootballTeamInfo = function(req, res) { //足球俱乐部信息
+  var reqPath = url.parse(req.url).path;
+  var query = urlParse(req.url);
+  var teamId = query.teamId;
+  var client = http.createClient(config.url);
+  var score_api = 'https://db.qiumibao.com/f/index/team?id='+ teamId;
+  client.get(score_api, function(err, response, body) {
+    if (response.statusCode == 200) {
+      res.json({
+        status:200,
+        data: response.body
+      });
+    } else {
+      res.json({
+        status: 1,
+        msg: '请求失败'
+      })
+    }
+  });
+};
+
+exports.FootballTeamChangeInfo = function(req, res) { //足球俱乐部转会信息
+  var reqPath = url.parse(req.url).path;
+  var query = urlParse(req.url);
+  var teamName = query.teamName;
+  var client = http.createClient(config.url);
+  var score_api = 'https://dc.qiumibao.com/shuju/public/index.php?_url=/football/transfer_team&team='+ teamName;
+  client.get(score_api, function(err, response, body) {
+    if (response.statusCode == 200) {
+      res.json({
+        status:200,
+        data: response.body
+      });
+    } else {
+      res.json({
+        status: 1,
+        msg: '请求失败'
+      })
+    }
+  });
+};
+
+var player_api = "http://sports1.sina.cn/global/teaminfo?league_type_id=4&team_id=";
+exports.playersByTeam = function(req, res) { // 获取球员详细信息
+  var reqPath = url.parse(req.url).path;
+  var league_id = reqPath.substr(reqPath.lastIndexOf("/") + 1, reqPath.length);
+  var geturl = player_api + league_id;
+  console.log(geturl);
+  superagent.get(geturl).end(function(err, sres) {
+    if (err) {
+      var error = {
+        err_code: 1,
+        msg: "新浪已经改标签了"
+      }
+      res.json(err);
+    } else {
+      var $ = cheerio.load(sres.text);
+      var items = [];
+      $('.team_list .team_info').each(function(idx, element) {
+        var $element = $(element);
+        items.push({
+          href: $(element).find("p").eq(0).find("a").attr("href"),
+          img: $(element).find("p").eq(0).find("img").attr("src"),
+          name: $(element).find("p").eq(1).find("span").eq(0).text(),
+          number: $(element).find("p").eq(1).find("span").eq(1).text(),
+          position: $(element).find("p").eq(1).find("span").eq(2).text(),
+        });
+
+        var result = {
+          code: 200,
+          data: items
+        }
+        res.json(result);
+      });
+
+    }
+  });
+};
 
 var nba_api = "http://op.juhe.cn/onebox/basketball/nba?key=d0df4f2cbfbde99c065222974ba58551";
 exports.NBA = function(req, res) {
@@ -82,7 +161,7 @@ exports.getBannerImg = function(req, res) {
         } else {
             var $ = cheerio.load(sres.text);
             var items = [];
-            $('#phdnews_slide .phdnews_slide_item a img').each(function(idx, element) {
+            $('#j_wrap_5 .thumbnail-b-gra a img').each(function(idx, element) {
                 var $element = $(element);
                 items.push({
                     title: $element.attr('alt'),
@@ -129,6 +208,7 @@ exports.pictureList = function(req, res) {
         }
     })
 }
+
 exports.pictureById = function(req, res) {
     var client = http.createClient(config.url);
     var reqPath = url.parse(req.url).path;
@@ -160,89 +240,55 @@ exports.pictureById = function(req, res) {
     })
 }
 
-
-var player_api = "http://sports1.sina.cn/global/teaminfo?league_type_id=4&team_id=";
-exports.playersByTeam = function(req, res) { //足球联赛积分榜
-    var reqPath = url.parse(req.url).path;
-    var league_id = reqPath.substr(reqPath.lastIndexOf("/") + 1, reqPath.length);
-    var geturl = player_api + league_id;
-    console.log(geturl);
-    superagent.get(geturl).end(function(err, sres) {
-        if (err) {
-            var error = {
-                err_code: 1,
-                msg: "新浪已经改标签了"
-            }
-            res.json(err);
-        } else {
-            var $ = cheerio.load(sres.text);
-            //console.log(sres.text);
-            var items = [];
-            $('.team_list .team_info').each(function(idx, element) {
-                var $element = $(element);
-                items.push({
-                    href: $(element).find("p").eq(0).find("a").attr("href"),
-                    img: $(element).find("p").eq(0).find("img").attr("src"),
-                    name: $(element).find("p").eq(1).find("span").eq(0).text(),
-                    number: $(element).find("p").eq(1).find("span").eq(1).text(),
-                    position: $(element).find("p").eq(1).find("span").eq(2).text(),
-                });
-
-                var result = {
-                    code: 200,
-                    data: items
-                }
-                res.json(result);
-            });
-
+exports.PickNews = function (req, res) {
+  var url = 'https://m.zhibo8.cc/index.htm';
+  var client = http.createClient(config.url);
+  superagent.get(url).end(function(err, result) {
+    if (err) {
+      var error = {
+        err_code: 1,
+        msg: "直播吧已经改标签了"
+      }
+      res.json(error);
+    } else {
+      var $ = cheerio.load(result.text);
+      // console.log(result.text)
+      var itemList = [];
+      $('.saishi .ent li').each(function (index, element) {
+        var $element = $(element);
+        var $ele = $element[0]
+        if ($ele.attribs.type === 'basketball ' ||$ele.attribs.type === 'football' ) {
+          var tr = $element.find("tr");
+          var td = tr.find('td');
+          var startTime = tr.find(".s_time").text();
+          var logo = tr.find('img');
+          var teamName = tr.find('b');
+          var score = tr.find('.s_name').text();
+          var s_keyword = tr.find('.s_keyword').text();
+          var hostLogo = logo[0] ? logo[0].attribs['data-original']: '',
+              guestLogo = logo[1] ? logo[1].attribs['data-original'] : '',
+              hostTeam = teamName[0] ? teamName[0].children[0].data: '',
+              guestTeam = teamName[2] ? teamName[2].children[0].data: '';
+          var situation = tr.find('.remind').text();
+          var data = {
+            sTime: startTime,
+            hostTeam: hostTeam,
+            hostLogo: hostLogo,
+            guestTeam: guestTeam,
+            guestLogo: guestLogo,
+            score: score,
+            situation: situation
+          };
+          itemList.push(data)
         }
-    });
-};
+      })
+      res.json({
+        code: 200,
+        data: itemList
+      });
+    }
+  })
+}
 
 
-var soccer_api = "http://sports.qq.com/soccerdata/";
-exports.Soccer = function(req, res) { //足球联赛积分榜
-    var reqPath = url.parse(req.url).path;
-    var league_id = reqPath.substr(reqPath.lastIndexOf("/") + 1, reqPath.length);
 
-    var geturl = soccer_api + league_id + "/jifen.htm";
-    console.log(geturl);
-
-    superagent.get(geturl).end(function(err, sres) {
-        if (err) {
-            var error = {
-                err_code: 1,
-                msg: "腾讯已经改标签了"
-            }
-            res.json(err);
-        } else {
-            var $ = cheerio.load(sres.text);
-            //console.log(sres.text);
-            var items = [];
-            $('.jf-table>tbody tr').each(function(idx, element) {
-                var $element = $(element);
-                items.push({
-                    id: idx + 1,
-                    img: $element.find("td").eq(1).find("img").attr("src"),
-                    href: $element.find("td").eq(1).find("a").attr("href"),
-                    teamName: $element.find("td").eq(1).find("a").text(),
-                    games: $element.find("td").eq(2).text(),
-                    win: $element.find("td").eq(3).text(),
-                    draw: $element.find("td").eq(4).text(),
-                    lose: $element.find("td").eq(5).text(),
-                    goal: $element.find("td").eq(6).text(),
-                    lost: $element.find("td").eq(7).text(),
-                    difference: $element.find("td").eq(8).text(),
-                    score: $element.find("td").eq(9).text()
-                });
-
-                var result = {
-                    code: 200,
-                    data: items
-                }
-                res.json(result);
-            });
-
-        }
-    });
-};
