@@ -14,4 +14,6 @@ router.get('/picture/:id', api.pictureById);
 router.get('/footballTeam', api.FootballTeamInfo)
 router.get('/footballTeamChangeInfo', api.FootballTeamChangeInfo)
 router.get('/team/players/:id', api.playersByTeam);
+router.get('/NBAScore', api.NBAScore);
+router.get('/download',api.download)
 module.exports = router;

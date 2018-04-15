@@ -6,8 +6,10 @@ var url = require("url");
 var qs = require("querystring");
 var fs = require("fs");
 var path = require('path');
+var request = require('request');
 var cheerio = require("cheerio");
 var superagent = require("superagent");
+var async = require('async');
 
 var urlParse = function(url){
   var arr = [],obj={};
@@ -23,6 +25,36 @@ var urlParse = function(url){
     }
   }
   return obj;
+}
+var downImgLength = 0
+var downloadImage =function(src, dest, callback){
+  request.head(src, function(err, res, body){
+    if(src) {
+      request(src).pipe(fs.createWriteStream(dest)).on('close',function(){
+        callback(null, dest);
+      });
+    }
+  });
+};
+var imgArr= ['guangxia', 'liaoning','guangdong','shandong','jiangsu','xinjiang','beijing','shenzhen',
+'guangzhou','shanghai','zhejiang','beikong','fujian','shanxi','tongxi','qingdao',
+'jilin','tianji','sichuan','bayi']
+var suffix = '.png';
+
+exports.download = function (req, res) {
+  async.map(imgArr, function(item, callback){
+    setTimeout(function(){
+      downloadImage('https://duihui.qiumibao.com/nba/'+ item + suffix, './download/'+item + suffix,function(err, data){
+        if(err) {
+          console.log(err)
+        }
+        if(data) {
+          console.log("done: "+ data);
+        }
+      });
+    },400);
+  }, function(err, results){
+  });
 }
 
 exports.News = function (req, res) {
@@ -47,7 +79,7 @@ exports.Score = function(req, res) { //足球联赛积分榜
   league = league.replace('"', '')
   var year = parseInt(new Date().getFullYear() - 1);
   var client = http.createClient(config.url);
-  var score_api = 'http://dc.qiumibao.com/shuju/public/index.php?_url=/data/index&league='+ league +'&tab=积分榜&year=[year]';
+  var score_api = 'http://dc.qiumibao.com/shuju/public/index.php?_url=/data/index&league=英超&tab=积分榜&year=[year]';
   client.get(score_api, function(err, response, body) {
     res.json(response);
   });
@@ -222,7 +254,6 @@ exports.pictureById = function(req, res) {
             res.json(error);
         } else {
             var $ = cheerio.load(sres.text);
-            // console.log(sres.text);
             var items = [];
             $('.swiper-wrapper .swiper-slide').each(function(idx, element) {
                 var $element = $(element);
@@ -252,35 +283,58 @@ exports.PickNews = function (req, res) {
       res.json(error);
     } else {
       var $ = cheerio.load(result.text);
-      // console.log(result.text)
       var itemList = [];
       $('.saishi .ent li').each(function (index, element) {
-        var $element = $(element);
-        var $ele = $element[0]
-        if ($ele.attribs.type === 'basketball ' ||$ele.attribs.type === 'football' ) {
-          var tr = $element.find("tr");
-          var td = tr.find('td');
-          var startTime = tr.find(".s_time").text();
-          var logo = tr.find('img');
-          var teamName = tr.find('b');
-          var score = tr.find('.s_name').text();
-          var s_keyword = tr.find('.s_keyword').text();
-          var hostLogo = logo[0] ? logo[0].attribs['data-original']: '',
-              guestLogo = logo[1] ? logo[1].attribs['data-original'] : '',
-              hostTeam = teamName[0] ? teamName[0].children[0].data: '',
-              guestTeam = teamName[2] ? teamName[2].children[0].data: '';
-          var situation = tr.find('.remind').text();
-          var data = {
-            sTime: startTime,
-            hostTeam: hostTeam,
-            hostLogo: hostLogo,
-            guestTeam: guestTeam,
-            guestLogo: guestLogo,
-            score: score,
-            situation: situation
-          };
-          itemList.push(data)
-        }
+        //if (index == 0) {
+          var $element = $(element);
+          var $ele = $element[0]
+          if ($ele.attribs.type === 'basketball ' || $ele.attribs.type.indexOf('football') > -1) {
+            var tr = $element.find("tr");
+            var tds = tr[0].children.filter(function(item) {
+              return item.type == 'tag' && item.name == 'td'
+            })
+            var l = tds.length,
+              host = '',
+              guest = '';
+            for (var i = 0;i<l ;i++ ){
+              var td_team = tds[i]
+              if (i==1 ) {
+                if (td_team.children.length) {
+                  host = td_team.children[0].children[0].data
+                }
+              }
+              if (i==3) {
+                if (td_team.children.length) {
+                  guest= td_team.children[0].children[0].data
+                }
+              }
+            }
+            var td = tr.find('td');
+            var first_td = tr.find(".s_time");
+            var last_td = tr.find(".remind");
+            var startTime = first_td.text();
+            var logo = tr.find('img');
+            var teamName = tr.find('b');
+            var score = tr.find('.s_name').text();
+            var s_keyword = tr.find('.s_keyword').text();
+            var hostLogo = logo[0] ? logo[0].attribs['data-original'] : '',
+                guestLogo = logo[1] ? logo[1].attribs['data-original'] : '',
+                hostTeam = teamName[0] ? teamName[0].children[0].data : host,
+                guestTeam = teamName[2] ? teamName[2].children[0].data : guest;
+            var situation = last_td.text();
+            var data = {
+              sTime: startTime,
+              hostTeam: hostTeam,
+              hostLogo: hostLogo,
+              guestTeam: guestTeam,
+              guestLogo: guestLogo,
+              score: score,
+              type: $ele.attribs.type,
+              situation: situation
+            };
+            itemList.push(data)
+          }
+        //}
       })
       res.json({
         code: 200,
@@ -288,6 +342,10 @@ exports.PickNews = function (req, res) {
       });
     }
   })
+}
+
+exports.NBAScore = function (req, res) {
+  
 }
 
 
